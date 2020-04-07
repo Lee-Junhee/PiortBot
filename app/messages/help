@@ -1,0 +1,3 @@
+PiortBot help:
+    !connect <Voice Channel> <Role>
+        links the Voice Channel to the Role such that Role is given to people in Voice Channel
