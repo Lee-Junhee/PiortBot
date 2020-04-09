@@ -1,4 +1,5 @@
 import discord
+from db.functions import *
 
 with open('token', 'r') as f:
     TOKEN = f.read()
@@ -7,37 +8,54 @@ data = {}
 
 @client.event
 async def on_ready():
-    global data
     for server in client.guilds:
-        data[server.id] = {}
+        try:
+            get_server(server.id)
+        except NullError:
+            add_server(server.id)
 
 @client.event
 async def on_guild_join(guild):
-    global data
-    data[guild.id] = {}
+    add_server(guild.id)
 
 @client.event
 async def on_message(message):
     if message.content.startswith('!connect'):
         if message.author.guild_permissions.manage_roles:
-            channels = message.guild.channels
-            argv = message.content.split()
-            cnames = [channel.name for channel in channels]
-            roles = message.guild.roles
-            rnames = [role.name for role in roles]
-            if argv[1] in cnames and argv[2] in rnames:
-                server = data[message.guild.id]
+            argv = message.content.split(';')
+            if len(argv) > 1:
+                channels = dict()
+                for channel in message.guild.channels:
+                    channels[channel.name] = channel.id
+                roles = dict()
+                for role in message.guild.roles:
+                    roles[role.name] = role.id
                 try:
-                    vc = [channel for channel in channels if channel.name == argv[1]][0]
-                    role = [role for role in roles if role.name == argv[2]][0]
-                    server[vc] = role
+                    add_channel(message.guild.id, channels[argv[1]], roles[argv[2]])
                     msg = 'Channel linked successfully!'
                     await message.channel.send(msg)
                 except IndexError:
-                    msg = 'Sorry! Either the Channel or the Role was not found on this server. Check your spelling and try again.'
-                    await message.channel.send(msg)             
+                    msg = 'Sorry! We could not find a channel and/or a role with that name. Please check your spelling and try again!'
+                    await message.channel.send(msg)
             else:
-                msg = 'Improper Usage! The proper use of this command is: !connect <Voice Channel> <Role>'
+                msg = 'Improper Usage! The proper use of this command is: !connect;<Voice Channel>;<Role>.'
+                await message.channel.send(msg)
+    if message.content.startswith('!disconnect'):
+        if message.author.guild_permissions.manage_roles:
+            argv = message.content.split(';')
+            if len(argv) > 0:
+                channels = dict()
+                for channel in message.guild.channels:
+                    channels[channel.name] = channel.id
+                try:
+                    drop_channel(message.guild.id, channels[argv[1]])   
+                    msg = 'Channel unlinked successfully!'
+                    await message.channel.send(msg)
+                except IndexError:
+                    msg = 'Sorry! We could not find a channel with that name. Please check your spelling and try again!'
+                    await message.channel.send(msg)
+            else:
+                msg = 'Improper Usage! The proper use of this command is !disconnect;<Voice Channel>'
                 await message.channel.send(msg)
     elif message.content.startswith('!help'):
         with open('app/messages/help', 'r') as f:
@@ -48,17 +66,19 @@ async def on_message(message):
 async def on_voice_state_update(member, before, after):
     before = before.channel
     after = after.channel
-    if before and before.guild.id in data:
-        server = data[before.guild.id]
-        if before in server:
-            roles = member.roles
-            roles.remove(server[before])
-            await member.edit(roles=roles)
-    if after and after.guild.id in data:
-        server = data[after.guild.id]
-        if after in server:
-            roles = member.roles
-            roles.insert(1, server[after])
-            await member.edit(roles=roles)
+    try:
+        r = before.guild.get_role(role(before.id))
+        roles = member.roles
+        roles.remove(r)
+        await member.edit(roles=roles)
+    except (ValueError, AttributeError, NullError):
+        pass
+    try:
+        r = after.guild.get_role(role(after.id))
+        roles = member.roles
+        roles.insert(1, r)
+        await member.edit(roles=roles)
+    except (AttributeError, NullError):
+        pass
         
 client.run(TOKEN)
